@@ -137,6 +137,8 @@ internal static class Program
         functionalTestTasks.Add(FunctionalTest.PutObject_Test5(minioClient));
         functionalTestTasks.Add(FunctionalTest.PutObject_Test7(minioClient));
         functionalTestTasks.Add(FunctionalTest.PutObject_Test8(minioClient));
+        functionalTestTasks.Add(FunctionalTest.PutObject_Test9(minioClient));
+        functionalTestTasks.Add(FunctionalTest.PutObject_Test10(minioClient));
 
         // Test StatObject function
         functionalTestTasks.Add(FunctionalTest.StatObject_Test1(minioClient));
@@ -244,12 +246,7 @@ internal static class Program
             functionalTestTasks.Add(FunctionalTest.EncryptedCopyObject_Test4(minioClient));
         }
 
-        ParallelOptions parallelOptions = new()
-        {
-            MaxDegreeOfParallelism = 4
-        };
-        await Parallel
-            .ForEachAsync(functionalTestTasks, parallelOptions,
-                async (task, _) => { await task.ConfigureAwait(false); }).ConfigureAwait(false);
+        await Utils.RunInParallel(functionalTestTasks, async (task, _) => { await task.ConfigureAwait(false); })
+            .ConfigureAwait(false);
     }
 }

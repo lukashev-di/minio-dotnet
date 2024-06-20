@@ -116,11 +116,10 @@ public class IAMAWSProvider : IClientProvider
     {
         Validate();
         var url = CustomEndPoint;
-        var urlStr = url.Authority;
-        if (url is null || string.IsNullOrWhiteSpace(urlStr))
+        if (url is null || string.IsNullOrWhiteSpace(url.Authority))
         {
             var region = Environment.GetEnvironmentVariable("AWS_REGION");
-            urlStr = region is null ? "https://sts.amazonaws.com" : "https://sts." + region + ".amazonaws.com";
+            var urlStr = region is null ? "https://sts.amazonaws.com" : "https://sts." + region + ".amazonaws.com";
             url = new Uri(urlStr);
         }
 
@@ -151,7 +150,7 @@ public class IAMAWSProvider : IClientProvider
         requestBuilder.AddQueryParameter("location", "");
 
         using var response =
-            await Minio_Client.ExecuteTaskAsync(Enumerable.Empty<ApiResponseErrorHandlingDelegate>(), requestBuilder)
+            await Minio_Client.ExecuteTaskAsync(Enumerable.Empty<ApiResponseErrorHandler>(), requestBuilder)
                 .ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(response.Content) ||
             !HttpStatusCode.OK.Equals(response.StatusCode))
@@ -182,7 +181,7 @@ JsonConvert.DefaultSettings = () => new JsonSerializerSettings
         requestBuilder.AddQueryParameter("location", "");
 
         using var response =
-            await Minio_Client.ExecuteTaskAsync(Enumerable.Empty<ApiResponseErrorHandlingDelegate>(), requestBuilder)
+            await Minio_Client.ExecuteTaskAsync(Enumerable.Empty<ApiResponseErrorHandler>(), requestBuilder)
                 .ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(response.Content) ||

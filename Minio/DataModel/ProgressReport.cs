@@ -1,5 +1,5 @@
-/*
- * MinIO .NET Library for Amazon S3 Compatible Cloud Storage, (C) 2020 MinIO, Inc.
+﻿/*
+ * MinIO .NET Library for Amazon S3 Compatible Cloud Storage, (C) 2017 MinIO, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,21 +16,8 @@
 
 namespace Minio.DataModel;
 
-public sealed class SelectObjectType
+public class ProgressReport
 {
-    // Constants for JSONTypes.
-    public static readonly SelectObjectType CSV = new("CSV");
-    public static readonly SelectObjectType JSON = new("JSON");
-    public static readonly SelectObjectType Parquet = new("Parquet");
-
-    public SelectObjectType()
-    {
-    }
-
-    public SelectObjectType(string type)
-    {
-        Type = type;
-    }
-
-    public string Type { get; set; }
+    public int Percentage { get; set; }
+    public long TotalBytesTransferred { get; set; }
 }

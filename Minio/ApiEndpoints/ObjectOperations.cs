@@ -263,7 +263,7 @@ public partial class MinioClient : IObjectOperations
         var requestMessageBuilder = await CreateRequest(HttpMethod.Put, args.BucketName,
             args.ObjectName,
             args.Headers, // contentType
-            Convert.ToString(args.GetType()), // metaData
+            Convert.ToString(args.GetType(), CultureInfo.InvariantCulture), // metaData
             Utils.ObjectToByteArray(args.RequestBody)).ConfigureAwait(false);
         var authenticator = new V4Authenticator(Secure, AccessKey, SecretKey, Region,
             SessionToken);
@@ -598,6 +598,7 @@ public partial class MinioClient : IObjectOperations
             .WithContentType(args.ContentType)
             .WithUploadId(uploadId)
             .WithStreamData(args.ObjectStreamData)
+            .WithProgress(args.Progress)
             .WithRequestBody(args.RequestBody)
             .WithHeaders(args.Headers);
         IDictionary<int, string> etags = null;
@@ -712,9 +713,9 @@ public partial class MinioClient : IObjectOperations
             cpReqArgs.Validate();
             Dictionary<string, string> newMeta;
             if (args.ReplaceMetadataDirective)
-                newMeta = new Dictionary<string, string>(args.Headers);
+                newMeta = new Dictionary<string, string>(args.Headers, StringComparer.Ordinal);
             else
-                newMeta = new Dictionary<string, string>(args.SourceObjectInfo.MetaData);
+                newMeta = new Dictionary<string, string>(args.SourceObjectInfo.MetaData, StringComparer.Ordinal);
             if (args.SourceObject.SSE is not null && args.SourceObject.SSE is SSECopy)
                 args.SourceObject.SSE.Marshal(newMeta);
             args.SSE?.Marshal(newMeta);
@@ -756,7 +757,7 @@ public partial class MinioClient : IObjectOperations
         using var response =
             await ExecuteTaskAsync(NoErrorHandlers, requestMessageBuilder, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
-        var responseHeaders = new Dictionary<string, string>();
+        var responseHeaders = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var param in response.Headers.ToList()) responseHeaders.Add(param.Key, param.Value);
         var statResponse = new StatObjectResponse(response.StatusCode, response.Content, response.Headers, args);
 
@@ -819,10 +820,16 @@ public partial class MinioClient : IObjectOperations
         CancellationToken cancellationToken = default)
     {
         //Skipping validate as we need the case where stream sends 0 bytes
+        var progressReport = new ProgressReport();
+        args.Progress?.Report(progressReport);
         var requestMessageBuilder = await CreateRequest(args).ConfigureAwait(false);
         using var response =
             await ExecuteTaskAsync(NoErrorHandlers, requestMessageBuilder, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
+
+        progressReport.Percentage = 100;
+        progressReport.TotalBytesTransferred = args.ObjectSize;
+        args.Progress?.Report(progressReport);
         return new PutObjectResponse(response.StatusCode, response.Content, response.Headers,
             args.ObjectSize, args.ObjectName);
     }
@@ -855,6 +862,8 @@ public partial class MinioClient : IObjectOperations
         int partNumber;
         var numPartsUploaded = 0;
         var etags = new Dictionary<int, string>();
+        var progressReport = new ProgressReport();
+        args.Progress?.Report(progressReport);
         for (partNumber = 1; partNumber <= partCount; partNumber++)
         {
             var dataToCopy = await ReadFullAsync(args.ObjectStreamData, (int)partSize).ConfigureAwait(false);
@@ -872,6 +881,9 @@ public partial class MinioClient : IObjectOperations
             totalParts[partNumber - 1] = new Part
                 { PartNumber = partNumber, ETag = etag, Size = (long)expectedReadSize };
             etags[partNumber] = etag;
+            if (!dataToCopy.IsEmpty) progressReport.TotalBytesTransferred += dataToCopy.Length;
+            if (args.ObjectSize != -1) progressReport.Percentage = (int)(100 * partNumber / partCount);
+            args.Progress?.Report(progressReport);
         }
 
         // This shouldn't happen where stream size is known.
@@ -883,6 +895,12 @@ public partial class MinioClient : IObjectOperations
                 .WithUploadId(args.UploadId);
             await RemoveUploadAsync(removeUploadArgs, cancellationToken).ConfigureAwait(false);
             return null;
+        }
+
+        if (args.ObjectSize == -1)
+        {
+            progressReport.Percentage = 100;
+            args.Progress?.Report(progressReport);
         }
 
         return etags;
@@ -932,11 +950,11 @@ public partial class MinioClient : IObjectOperations
                 partCondition.byteRangeEnd = partCondition.byteRangeStart + (long)partSize - 1;
             else
                 partCondition.byteRangeEnd = partCondition.byteRangeStart + (long)lastPartSize - 1;
-            var queryMap = new Dictionary<string, string>();
+            var queryMap = new Dictionary<string, string>(StringComparer.Ordinal);
             if (!string.IsNullOrEmpty(uploadId) && partNumber > 0)
             {
                 queryMap.Add("uploadId", uploadId);
-                queryMap.Add("partNumber", partNumber.ToString());
+                queryMap.Add("partNumber", partNumber.ToString(CultureInfo.InvariantCulture));
             }
 
             if (args.SourceObject.SSE is not null && args.SourceObject.SSE is SSECopy)
@@ -1320,7 +1338,7 @@ public partial class MinioClient : IObjectOperations
         double lastPartSize = multiPartInfo.lastPartSize;
         var totalParts = new Part[(int)partCount];
 
-        var sseHeaders = new Dictionary<string, string>();
+        var sseHeaders = new Dictionary<string, string>(StringComparer.Ordinal);
         sseDest?.Marshal(sseHeaders);
 
         // No need to resume upload since this is a Server-side copy. Just initiate a new upload.
@@ -1340,20 +1358,21 @@ public partial class MinioClient : IObjectOperations
             else
                 partCondition.byteRangeEnd = partCondition.byteRangeStart + (long)lastPartSize - 1;
 
-            var queryMap = new Dictionary<string, string>();
+            var queryMap = new Dictionary<string, string>(StringComparer.Ordinal);
             if (!string.IsNullOrEmpty(uploadId) && partNumber > 0)
             {
                 queryMap.Add("uploadId", uploadId);
-                queryMap.Add("partNumber", partNumber.ToString());
+                queryMap.Add("partNumber", partNumber.ToString(CultureInfo.InvariantCulture));
             }
 
             var customHeader = new Dictionary<string, string>
-            {
+                (StringComparer.Ordinal)
                 {
-                    "x-amz-copy-source-range",
-                    "bytes=" + partCondition.byteRangeStart + "-" + partCondition.byteRangeEnd
-                }
-            };
+                    {
+                        "x-amz-copy-source-range",
+                        "bytes=" + partCondition.byteRangeStart + "-" + partCondition.byteRangeEnd
+                    }
+                };
 
             if (sseSrc is not null && sseSrc is SSECopy) sseSrc.Marshal(customHeader);
             sseDest?.Marshal(customHeader);
